@@ -135,12 +135,17 @@ function AgentSettings() {
       <div className="row wrap" style={{ marginTop: 12, gap: 18 }}>
         <label className="row small muted" style={{ gap: 8 }}>
           Людей за поиск по умолчанию
-          <input className="input num" style={{ width: 80 }} type="number" min={1} max={200} value={form.default_count}
+          <input className="input num" style={{ width: 80 }} type="number" min={1} max={100} value={form.default_count}
             onChange={(e) => setForm({ ...form, default_count: Number(e.target.value) || 1 })} />
         </label>
-        <label className="row small muted" style={{ gap: 8 }}>
-          Максимум людей из одной компании (0 — без лимита)
-          <input className="input num" style={{ width: 70 }} type="number" min={0} max={50} value={form.per_company}
+        <label className="row small muted" style={{ gap: 8 }} title="Людей с оценкой ниже ИИ не показывает вообще">
+          Минимальная релевантность, %
+          <input className="input num" style={{ width: 70 }} type="number" min={0} max={100} value={form.min_score ?? 70}
+            onChange={(e) => setForm({ ...form, min_score: Math.min(100, Number(e.target.value) || 0) })} />
+        </label>
+        <label className="row small muted" style={{ gap: 8 }} title="Только для поиска по нише/похожим компаниям; в названных компаниях и Meta — без лимита">
+          Максимум из одной компании в поиске по нише (0 — без лимита)
+          <input className="input num" style={{ width: 70 }} type="number" min={0} max={100} value={form.per_company}
             onChange={(e) => setForm({ ...form, per_company: Number(e.target.value) || 0 })} />
         </label>
         <label className="row small muted" style={{ gap: 8 }} title="Сколько страниц LinkedIn аккаунт открывает в час и в сутки. Больше — быстрее находятся профили, но выше риск ограничений аккаунта.">

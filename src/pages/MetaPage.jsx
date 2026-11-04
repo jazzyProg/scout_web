@@ -54,8 +54,11 @@ export default function MetaPage() {
         <button className="btn" onClick={research} disabled={running}>
           <RefreshCw size={14} className={running ? 'spin' : ''} /> {running ? 'Ресерч идёт…' : 'Обновить ресерч'}
         </button>
-        <button className="btn btn-primary" onClick={() => searchIn({ meta: true, query: '' })}>
-          <Sparkles size={14} /> Искать людей во всей экосистеме
+        <button className="btn" onClick={() => searchIn({ meta: true, query: '' })}>
+          <Sparkles size={14} /> Вся экосистема
+        </button>
+        <button className="btn btn-primary" onClick={() => searchIn({ mode: 'unban', query: 'Кто в Meta и у подрядчиков занимается разбаном и проверкой аккаунтов Instagram' })}>
+          <Sparkles size={14} /> Кто разбанивает Instagram
         </button>
       </div>
 

@@ -9,11 +9,22 @@ import { META_WEIGHT, mergeList, PersonCard, PersonDrawer, useEnrich, useLivePeo
 import { Stepper, Switch, TagInput } from '../ui'
 
 const EXAMPLES = [
-  ['Маркетинг и партнёрства в Meta, Instagram и у подрядчиков Meta', 'Экосистема Meta: группа + подрядчики + партнёры'],
-  ['Head of Marketing в Notion и Figma', 'Конкретные компании'],
-  ['Компании по типу Stake и Gamdom: кто ведёт соцсети и рекламу', 'Похожие компании + роли'],
-  ['VP Sales в SaaS на 51–200 сотрудников, Калифорния', 'Фильтр по размеру компании'],
+  ['Кто в Meta и у её подрядчиков занимается разбаном и проверкой аккаунтов Instagram', 'Разбан: Meta + Concentrix, Accenture, TP… по всему миру'],
+  ['Таргетологи и paid social менеджеры в агентствах', 'Реклама в соцсетях'],
+  ['Владельцы салонов красоты и медспа, которые рекламируются в Instagram', 'Бизнесы с рекламой в Meta (Facebook Pixel)'],
+  ['Компании по типу Stake и Gamdom: кто ведёт рекламу в соцсетях', 'Похожие компании + реклама в соцсетях'],
 ]
+
+export const MODES = [
+  ['auto', 'Сценарий: авто'],
+  ['unban', 'Разбан Instagram'],
+  ['paid_social', 'Реклама в соцсетях'],
+  ['ig_advertisers', 'Рекламируются в Instagram'],
+  ['custom', 'Свои должности'],
+]
+const MODE_LABEL = Object.fromEntries(MODES)
+const REGIONS = { auto: '📍 Регион: авто', us: '📍 США', world: '🌍 Весь мир' }
+const NEXT_REGION = { auto: 'us', us: 'world', world: 'auto' }
 
 const SENIORITIES = [
   ['c_suite', 'C-level'], ['founder', 'Основатели'], ['owner', 'Владельцы'], ['vp', 'VP'], ['head', 'Head of'],
@@ -23,10 +34,8 @@ const SIZES = [
   ['1,10', '1–10'], ['11,50', '11–50'], ['51,200', '51–200'], ['201,500', '201–500'], ['501,1000', '501–1000'],
   ['1001,5000', '1001–5000'], ['5001,10000', '5001–10 000'], ['10001,1000000', '10 000+'],
 ]
-const DEFAULT_LOCATION = 'United States'
-
 const emptyForm = () => ({
-  query: '', companies: [], titles: [], locations: [DEFAULT_LOCATION], seniorities: [], industries: [], employee_ranges: [],
+  query: '', companies: [], titles: [], locations: [], seniorities: [], industries: [], employee_ranges: [],
 })
 
 const filterCount = (f) => f.companies.length + f.titles.length + f.seniorities.length + f.industries.length + f.employee_ranges.length
@@ -52,9 +61,9 @@ export default function SearchPage({ chatId, nonce }) {
   const { toast, refreshCredits, refreshChats, settings, prefill, clearPrefill } = useApp()
   const [form, setForm] = useState(emptyForm)
   const [locTouched, setLocTouched] = useState(false)
-  const [count, setCount] = useState(25)
+  const [count, setCount] = useState(100)
   const [countSet, setCountSet] = useState(false)
-  const [opts, setOpts] = useState({ expand: true, rank: true, linkedin: true, similar: false, meta: false })
+  const [opts, setOpts] = useState({ expand: true, rank: true, linkedin: true, similar: false, meta: false, mode: 'auto', region: 'auto' })
   const [loadingChat, setLoadingChat] = useState(false)
   const chatRef = useRef(null) // the chat these turns belong to (null = a new chat not saved yet)
   const [showFilters, setShowFilters] = useState(false)
@@ -94,7 +103,7 @@ export default function SearchPage({ chatId, nonce }) {
   useEffect(() => {
     if (!prefill) return
     setForm({ ...emptyForm(), companies: prefill.companies || [], query: prefill.query || '' })
-    setOpts((o) => ({ ...o, meta: !!prefill.meta, similar: false }))
+    setOpts((o) => ({ ...o, meta: !!prefill.meta, similar: false, mode: prefill.mode || 'auto' }))
     setShowFilters(!!prefill.companies?.length)
     clearPrefill()
     setTimeout(() => taRef.current?.focus(), 50)
@@ -103,7 +112,7 @@ export default function SearchPage({ chatId, nonce }) {
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
   const toggleIn = (k, v) => setForm((f) => ({ ...f, [k]: f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v] }))
   const hasInput = form.query.trim() || form.companies.length || form.titles.length || form.industries.length
-    || form.seniorities.length || opts.meta
+    || form.seniorities.length || opts.meta || ['unban', 'paid_social'].includes(opts.mode)
 
   // keep the newest message in view while the agent streams, unless the user scrolled up to read
   const stick = useRef(true)
@@ -174,7 +183,7 @@ export default function SearchPage({ chatId, nonce }) {
     if (!hasInput || running) return
     const request = {
       ...form, count, count_set: countSet, company_ids: {}, ...opts,
-      per_company: settings?.per_company ?? 3,
+      per_company: settings?.per_company ?? 10,
     }
     start(request, form.query.trim())
     setForm((f) => ({ ...f, query: '' }))
@@ -218,7 +227,7 @@ export default function SearchPage({ chatId, nonce }) {
                 <div className="label">📍 Регион</div>
                 <TagInput value={form.locations} onChange={(v) => { set('locations')(v); setLocTouched(true) }} placeholder="United States"
                   suggestions={['United States', 'New York, US', 'California, US', 'Florida, US', 'Texas, US']} />
-                <div className="small faint" style={{ marginTop: 6 }}>Люди только из этого региона (пусто = США)</div>
+                <div className="small faint" style={{ marginTop: 6 }}>Пусто — по кнопке региона (авто: США, для разбана весь мир)</div>
               </div>
               <div>
                 <div className="label">Отрасль компании</div>
@@ -247,7 +256,7 @@ export default function SearchPage({ chatId, nonce }) {
                 <Switch checked={opts.similar} onChange={(v) => setOpts((o) => ({ ...o, similar: v }))}>Искать похожие компании</Switch>
                 <Switch checked={opts.meta} onChange={(v) => setOpts((o) => ({ ...o, meta: v }))}>Вся экосистема Meta (группа, подрядчики, партнёры)</Switch>
                 <div className="grow" />
-                <button className="btn btn-ghost btn-sm" onClick={() => { setForm(emptyForm()); setLocTouched(false); setCountSet(false); setOpts((o) => ({ ...o, meta: false, similar: false })) }}><X size={14} /> Сбросить</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setForm(emptyForm()); setLocTouched(false); setCountSet(false); setOpts((o) => ({ ...o, meta: false, similar: false, mode: 'auto', region: 'auto' })) }}><X size={14} /> Сбросить</button>
               </div>
             </div>
           </div>
@@ -267,9 +276,19 @@ export default function SearchPage({ chatId, nonce }) {
               {filterCount(form) > 0 && <span className="badge badge-accent" style={{ height: 17 }}>{filterCount(form)}</span>}
               <ChevronDown size={13} style={{ transform: showFilters ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
             </button>
-            <button className="chip" onClick={() => setShowFilters(true)} title="Регион">
-              📍 {form.locations.length ? form.locations.join(', ') : 'United States'}
-            </button>
+            <select className={`chip chip-select ${opts.mode !== 'auto' ? 'on' : ''}`} value={opts.mode}
+              onChange={(e) => setOpts((o) => ({ ...o, mode: e.target.value }))}
+              title="Какие роли ищем. «Авто» — агент сам поймёт по тексту запроса">
+              {MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            {form.locations.length ? (
+              <button className="chip on" onClick={() => setShowFilters(true)} title="Регион из фильтров">📍 {form.locations.join(', ')}</button>
+            ) : (
+              <button className={`chip ${opts.region !== 'auto' ? 'on' : ''}`} onClick={() => setOpts((o) => ({ ...o, region: NEXT_REGION[o.region] }))}
+                title="Авто: США, а для разбана — весь мир. Нажмите, чтобы переключить">
+                {REGIONS[opts.region]}
+              </button>
+            )}
             <button className={`chip ${opts.meta ? 'on meta-chip' : ''}`} onClick={() => setOpts((o) => ({ ...o, meta: !o.meta }))}
               title="Искать в Meta, Facebook, Instagram, WhatsApp и у подрядчиков/партнёров Meta">
               <InfinityIcon size={14} /> Meta
@@ -284,7 +303,9 @@ export default function SearchPage({ chatId, nonce }) {
             )}
           </div>
         </div>
-        <div className="dock-hint">Enter — найти · Shift+Enter — новая строка · уже найденные люди не повторяются</div>
+        <div className="dock-hint">
+          Enter — найти · показываю всех подходящих (до {count}) с релевантностью от {settings?.min_score ?? 70}% · уже найденные не повторяются
+        </div>
       </div>
       <PersonDrawer id={openId} onClose={() => setOpenId(null)} onChanged={mergeAll} />
     </div>
@@ -315,9 +336,12 @@ function requestChips(r) {
     ...(r.titles || []).map((x) => `👤 ${x}`),
     ...(r.industries || []).map((x) => `🏷 ${x}`),
     ...(r.locations || []).map((x) => `📍 ${x}`),
+    ...(r.mode && r.mode !== 'auto' ? [`🎯 ${MODE_LABEL[r.mode]}`] : []),
+    ...(!(r.locations || []).length && r.region === 'world' ? ['🌍 весь мир'] : []),
+    ...(!(r.locations || []).length && r.region === 'us' ? ['📍 США'] : []),
     ...(r.similar ? ['+ похожие компании'] : []),
     ...(r.meta ? ['∞ экосистема Meta'] : []),
-    `${r.count} чел.`,
+    `до ${r.count} чел.`,
   ]
 }
 
