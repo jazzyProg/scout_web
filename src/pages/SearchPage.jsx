@@ -3,10 +3,11 @@ import {
   ArrowUp, Bot, Building2, Check, CheckSquare, ChevronDown, Download, Infinity as InfinityIcon, Loader2, RefreshCw,
   SlidersHorizontal, Sparkles, Square, Users, X, Zap,
 } from 'lucide-react'
-import { api, COST_PER_PERSON, download, plural, streamSearch } from '../api'
+import { api, COST_BASE, COST_PER_PERSON, download, plural, streamSearch } from '../api'
 import { useApp } from '../App'
-import { META_WEIGHT, mergeList, PersonCard, PersonDrawer, useEnrich, useLivePeople } from '../people'
+import { META_WEIGHT, mergeList, needsEnrich, PersonCard, PersonDrawer, useEnrich, useLivePeople } from '../people'
 import { Stepper, Switch, TagInput } from '../ui'
+import { regionLabel, RegionPicker } from '../regions'
 
 const EXAMPLES = [
   ['Кто в Meta и у её подрядчиков занимается разбаном и проверкой аккаунтов Instagram', 'Разбан: Meta + Concentrix, Accenture, TP… по всему миру'],
@@ -23,8 +24,6 @@ export const MODES = [
   ['custom', 'Свои должности'],
 ]
 const MODE_LABEL = Object.fromEntries(MODES)
-const REGIONS = { auto: '📍 Регион: авто', us: '📍 США', world: '🌍 Весь мир' }
-const NEXT_REGION = { auto: 'us', us: 'world', world: 'auto' }
 
 const SENIORITIES = [
   ['c_suite', 'C-level'], ['founder', 'Основатели'], ['owner', 'Владельцы'], ['vp', 'VP'], ['head', 'Head of'],
@@ -225,9 +224,9 @@ export default function SearchPage({ chatId, nonce }) {
               </div>
               <div>
                 <div className="label">📍 Регион</div>
-                <TagInput value={form.locations} onChange={(v) => { set('locations')(v); setLocTouched(true) }} placeholder="United States"
-                  suggestions={['United States', 'New York, US', 'California, US', 'Florida, US', 'Texas, US']} />
-                <div className="small faint" style={{ marginTop: 6 }}>Пусто — по кнопке региона (авто: США, для разбана весь мир)</div>
+                <RegionPicker region={opts.region} locations={form.locations}
+                  onChange={({ region, locations }) => { setOpts((o) => ({ ...o, region })); set('locations')(locations); setLocTouched(true) }} />
+                <div className="small faint" style={{ marginTop: 6 }}>Авто: США, а для Meta и разбана — весь мир</div>
               </div>
               <div>
                 <div className="label">Отрасль компании</div>
@@ -281,14 +280,8 @@ export default function SearchPage({ chatId, nonce }) {
               title="Какие роли ищем. «Авто» — агент сам поймёт по тексту запроса">
               {MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
-            {form.locations.length ? (
-              <button className="chip on" onClick={() => setShowFilters(true)} title="Регион из фильтров">📍 {form.locations.join(', ')}</button>
-            ) : (
-              <button className={`chip ${opts.region !== 'auto' ? 'on' : ''}`} onClick={() => setOpts((o) => ({ ...o, region: NEXT_REGION[o.region] }))}
-                title="Авто: США, а для разбана — весь мир. Нажмите, чтобы переключить">
-                {REGIONS[opts.region]}
-              </button>
-            )}
+            <RegionPicker region={opts.region} locations={form.locations}
+              onChange={({ region, locations }) => { setOpts((o) => ({ ...o, region })); set('locations')(locations) }} />
             <button className={`chip ${opts.meta ? 'on meta-chip' : ''}`} onClick={() => setOpts((o) => ({ ...o, meta: !o.meta }))}
               title="Искать в Meta, Facebook, Instagram, WhatsApp и у подрядчиков/партнёров Meta">
               <InfinityIcon size={14} /> Meta
@@ -335,10 +328,9 @@ function requestChips(r) {
     ...(r.companies || []).map((x) => `🏢 ${x}`),
     ...(r.titles || []).map((x) => `👤 ${x}`),
     ...(r.industries || []).map((x) => `🏷 ${x}`),
-    ...(r.locations || []).map((x) => `📍 ${x}`),
+    ...(r.locations || []).map((x) => `📍 ${regionLabel(x)}`),
     ...(r.mode && r.mode !== 'auto' ? [`🎯 ${MODE_LABEL[r.mode]}`] : []),
     ...(!(r.locations || []).length && r.region === 'world' ? ['🌍 весь мир'] : []),
-    ...(!(r.locations || []).length && r.region === 'us' ? ['📍 США'] : []),
     ...(r.similar ? ['+ похожие компании'] : []),
     ...(r.meta ? ['∞ экосистема Meta'] : []),
     `до ${r.count} чел.`,
@@ -374,7 +366,8 @@ function Turn({ t, setTurn, enrich, busy, onOpen, onMore, onPickCompany, onStop,
   const allSel = people.length > 0 && people.every((p) => sel.has(p.apollo_id))
   const selPeople = people.filter((p) => sel.has(p.apollo_id))
   const target = selPeople.length ? selPeople : people
-  const toEnrich = target.filter((p) => p.enrich_status !== 'enriched')
+  const toEnrich = needsEnrich(target, false)
+  const toPhone = needsEnrich(target, true)
   const fresh = people.filter((p) => !p.seen_before)
   const earlier = people.filter((p) => p.seen_before)
 
@@ -427,9 +420,15 @@ function Turn({ t, setTurn, enrich, busy, onOpen, onMore, onPickCompany, onStop,
                 <button className="btn btn-sm" onClick={() => download(`/api/export?fmt=xlsx&ids=${target.map((p) => encodeURIComponent(p.apollo_id)).join(',')}`).catch((e) => toast(e.message, 'error'))}>
                   <Download size={14} /> Excel
                 </button>
-                <button className="btn btn-primary btn-sm" disabled={!toEnrich.length} onClick={() => enrich(target)}>
-                  <Zap size={14} /> Получить контакты{toEnrich.length ? ` (${toEnrich.length})` : ''}
-                  {toEnrich.length > 0 && <span style={{ opacity: 0.75, fontWeight: 500 }}>· до {toEnrich.length * COST_PER_PERSON} кр.</span>}
+                <button className="btn btn-sm" disabled={!toPhone.length} onClick={() => enrich(target, true)}
+                  title="LinkedIn, email и мобильный телефон: 1 + 8 кредитов за мобильный">
+                  С телефонами{toPhone.length ? ` (${toPhone.length})` : ''}
+                  {toPhone.length > 0 && <span style={{ opacity: 0.75, fontWeight: 500 }}>· до {toPhone.length * COST_PER_PERSON} кр.</span>}
+                </button>
+                <button className="btn btn-primary btn-sm" disabled={!toEnrich.length} onClick={() => enrich(target, false)}
+                  title="Точная ссылка на LinkedIn, имя, рабочий и личные email — 1 кредит за человека">
+                  <Zap size={14} /> LinkedIn и email{toEnrich.length ? ` (${toEnrich.length})` : ''}
+                  {toEnrich.length > 0 && <span style={{ opacity: 0.75, fontWeight: 500 }}>· {toEnrich.length * COST_BASE} кр.</span>}
                 </button>
               </div>
               <div className="cards">

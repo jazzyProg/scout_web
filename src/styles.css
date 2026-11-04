@@ -449,3 +449,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .chip-select option { background: var(--panel-solid); color: var(--text); }
 .chip.chip-select.on { background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
   background-position: calc(100% - 13px) 11px, calc(100% - 9px) 11px; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
+
+/* region picker: opens upwards from the composer, downwards inside the filters */
+.region-picker { position: relative; display: inline-block; }
+.region-chip-text { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.region-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; width: min(560px, 92vw); padding: 14px; max-height: 60vh; overflow: auto; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35); }
+.filters-pop .region-pop { bottom: auto; top: calc(100% + 6px); }

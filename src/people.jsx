@@ -3,9 +3,10 @@ import {
   AtSign, Briefcase, Building2, ExternalLink, EyeOff, Facebook, Github, Globe, Infinity as InfinityIcon, Instagram, Linkedin,
   Loader2, Mail, MapPin, Pencil, Phone, RefreshCw, Sparkles, Twitch, Twitter, X, Youtube, Zap,
 } from 'lucide-react'
-import { api, COST_PER_PERSON, fmtDate, fmtPhone, personName, plural } from './api'
+import { api, COST_BASE, COST_PER_PERSON, fmtDate, fmtPhone, personName, plural } from './api'
 import { useApp } from './App'
 import { Avatar, CopyButton, ScoreBadge } from './ui'
+import { regionLabel } from './regions'
 
 /* Fresh rows replace the old ones; prev_id covers people who got their Apollo id on enrichment. */
 export const mergeList = (list, rows) => {
@@ -39,16 +40,16 @@ export function useLivePeople(people, merge) {
 export function useEnrich(merge) {
   const { toast, confirm, credits, refreshCredits } = useApp()
   const [busy, setBusy] = useState(() => new Set())
-  const run = useCallback(async (ids) => {
+  const run = useCallback(async (ids, phones) => {
     setBusy((b) => new Set([...b, ...ids]))
     try {
-      const r = await api.post('/api/people/enrich', { ids })
+      const r = await api.post('/api/people/enrich', { ids, phones })
       merge(r.people)
       const mine = r.people.filter((p) => ids.includes(p.prev_id || p.apollo_id))
       const ok = mine.filter((p) => p.enrich_status === 'enriched').length
       const miss = mine.filter((p) => p.enrich_status === 'no_match').length
       if (r.errors?.length) toast(r.errors[0], 'error')
-      else toast(`Контакты получены: ${ok}${miss ? `, не найдено в Apollo: ${miss}` : ''}. Телефоны подгрузятся в течение минуты.`, 'success')
+      else toast(`Контакты получены: ${ok}${miss ? `, не найдено в Apollo: ${miss}` : ''}.${phones ? ' Телефоны подгрузятся в течение минуты.' : ''}`, 'success')
     } catch (e) {
       toast(e.message, 'error')
     } finally {
@@ -57,26 +58,49 @@ export function useEnrich(merge) {
     }
   }, [merge, toast, refreshCredits])
 
-  const enrich = useCallback((people) => {
-    const todo = people.filter((p) => p.enrich_status !== 'enriched')
-    if (!todo.length) { toast('У выбранных контакты уже получены — повторно кредиты не тратим', 'info'); return }
+  /* phones=false: LinkedIn + emails, 1 credit; phones=true: also the phone (+8 for a mobile), and the phone alone
+     for people whose contacts were taken without it. */
+  const enrich = useCallback((people, phones = false) => {
+    const todo = needsEnrich(people, phones)
+    if (!todo.length) {
+      toast(phones ? 'У выбранных телефоны уже запрошены — повторно кредиты не тратим' : 'У выбранных контакты уже получены — повторно кредиты не тратим', 'info')
+      return
+    }
     const n = todo.length
-    const max = n * COST_PER_PERSON
+    const fresh = todo.filter((p) => p.enrich_status !== 'enriched').length
+    const max = phones ? fresh * COST_PER_PERSON + (n - fresh) * COST_PER_PERSON : n * COST_BASE
     confirm({
-      title: `Получить контакты: ${n} ${plural(n, 'человек', 'человека', 'человек')}`,
+      title: `${phones ? 'Контакты с телефоном' : 'LinkedIn и email'}: ${n} ${plural(n, 'человек', 'человека', 'человек')}`,
       body: (
         <div className="col" style={{ gap: 8 }}>
-          <div>Apollo найдёт рабочий и личные email, телефоны и LinkedIn.</div>
-          <div>Списание: <b>1 кредит</b> за человека + <b>8</b>, если найдётся мобильный. Максимум — <b className="num">{max}</b>.</div>
+          {phones ? (
+            <>
+              <div>Apollo найдёт LinkedIn, рабочий и личные email и телефоны.</div>
+              <div>Списание: <b>1 кредит</b> за человека + <b>8</b>, если найдётся мобильный. Максимум — <b className="num">{max}</b>.</div>
+              {n > fresh && <div className="faint">{n - fresh} уже с email — для них запросим только телефон.</div>}
+            </>
+          ) : (
+            <>
+              <div>Apollo даст точную ссылку на LinkedIn, полное имя, рабочий и личные email, город и историю работы.</div>
+              <div>Списание: <b>1 кредит</b> за найденного человека (не нашёл — бесплатно). Максимум — <b className="num">{max}</b>.</div>
+              <div className="faint">Телефон можно запросить потом только у нужных: +8 кредитов за мобильный.</div>
+            </>
+          )}
           {credits?.left != null && <div className="faint">Сейчас на балансе: <span className="num">{credits.left.toLocaleString('ru-RU')}</span></div>}
-          {people.length > n && <div className="faint">{people.length - n} уже с контактами — их пропустим.</div>}
+          {people.length > n && <div className="faint">{people.length - n} уже с {phones ? 'телефоном или запросом' : 'контактами'} — их пропустим.</div>}
         </div>
       ),
-      ok: 'Получить контакты',
-      onOk: () => run(todo.map((p) => p.apollo_id)),
+      ok: phones ? 'Получить с телефоном' : 'Получить LinkedIn и email',
+      onOk: () => run(todo.map((p) => p.apollo_id), phones),
     })
   }, [confirm, credits, run, toast])
   return { enrich, busy }
+}
+
+/* Who a "get contacts" click would spend credits on. */
+export function needsEnrich(people, phones = false) {
+  return people.filter((p) => p.enrich_status !== 'enriched'
+    || (phones && p.phone_status === 'skipped' && !String(p.apollo_id).startsWith('li:')))
 }
 
 export async function hidePeople(ids, hidden = true) {
@@ -87,6 +111,9 @@ export async function hidePeople(ids, hidden = true) {
 function PhoneLines({ p }) {
   if (p.phone_status === 'pending') {
     return <div className="contact-line pending"><Phone size={14} /><span className="muted">Ищем телефон…</span></div>
+  }
+  if (p.phone_status === 'skipped' && !p.phones?.length) {
+    return <div className="contact-line"><Phone size={14} /><span className="faint">Телефон не запрашивали (+8 кредитов за мобильный)</span></div>
   }
   if (!p.phones?.length) {
     return p.enrich_status === 'enriched'
@@ -244,6 +271,7 @@ export function SocialLinks({ p, full = false, onRecheck }) {
 /* ---------------------------------------------------------------- card */
 export function PersonCard({ p, selected, onSelect, onOpen, onEnrich, busy, index = 0 }) {
   const loc = [p.city, p.state, p.country === 'United States' ? 'USA' : p.country].filter(Boolean).join(', ')
+    || (p.area ? regionLabel(p.area) : '')
   return (
     <div className={`card pcard ${selected ? 'selected' : ''} ${p.meta_rel ? 'meta' : ''}`} style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
       <div className="pcard-head">
@@ -273,16 +301,36 @@ export function PersonCard({ p, selected, onSelect, onOpen, onEnrich, busy, inde
       {p.enrich_status === 'enriched' && p.summary == null && (
         <div className="small faint row pending" style={{ gap: 6 }}><Sparkles size={13} /> ИИ готовит краткую справку…</div>
       )}
-      {p.enrich_status !== 'enriched' && (
-        <div className="pcard-foot">
-          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onEnrich([p])}>
-            {busy ? <Loader2 size={14} className="spin" /> : <Zap size={14} />} Получить контакты
-          </button>
-          <span className="small faint">до {COST_PER_PERSON} кредитов</span>
-        </div>
-      )}
+      <EnrichButtons p={p} busy={busy} onEnrich={onEnrich} small />
     </div>
   )
+}
+
+/* "LinkedIn и email" for 1 credit, the phone separately (+8): the phone is what makes contacts expensive. */
+export function EnrichButtons({ p, busy, onEnrich, small = false }) {
+  const cls = small ? 'btn-sm' : ''
+  if (p.enrich_status !== 'enriched') {
+    return (
+      <div className="pcard-foot row wrap" style={{ gap: 6 }}>
+        <button className={`btn btn-primary ${cls}`} disabled={busy} onClick={() => onEnrich([p], false)} title="Ссылка на LinkedIn, имя, рабочий и личные email">
+          {busy ? <Loader2 size={14} className="spin" /> : <Linkedin size={14} />} LinkedIn и email · {COST_BASE} кр.
+        </button>
+        <button className={`btn ${cls}`} disabled={busy} onClick={() => onEnrich([p], true)} title="То же + мобильный телефон">
+          <Phone size={14} /> С телефоном · до {COST_PER_PERSON}
+        </button>
+      </div>
+    )
+  }
+  if (p.phone_status === 'skipped' && !String(p.apollo_id).startsWith('li:')) {
+    return (
+      <div className="pcard-foot">
+        <button className={`btn ${cls}`} disabled={busy} onClick={() => onEnrich([p], true)}>
+          {busy ? <Loader2 size={14} className="spin" /> : <Phone size={14} />} Получить телефон · до {COST_PER_PERSON} кр.
+        </button>
+      </div>
+    )
+  }
+  return null
 }
 
 
@@ -441,6 +489,7 @@ export function PersonDrawer({ id, onClose, onChanged, onHidden }) {
               {p.seniority && <span className="badge badge-accent">{p.seniority}</span>}
               <SourceBadge p={p} />
               {(p.city || p.state || p.country) && <span className="badge badge-gray"><MapPin size={11} /> {[p.city, p.state, p.country].filter(Boolean).join(', ')}</span>}
+              {!(p.city || p.state || p.country) && p.area && <span className="badge badge-gray" title="Точное место станет известно после «Получить контакты»"><MapPin size={11} /> найден в регионе: {regionLabel(p.area)}</span>}
               <span className="badge badge-gray">найден {fmtDate(p.found_at)}</span>
               {p.enriched_at && <span className="badge badge-gray">обогащён {fmtDate(p.enriched_at)}</span>}
             </div>
@@ -450,17 +499,8 @@ export function PersonDrawer({ id, onClose, onChanged, onHidden }) {
                 {p.summary && <><div className="section-title">Кратко (ИИ)</div><div className="summary">{p.summary}</div></>}
 
                 <div className="section-title">Контакты</div>
-                {p.enrich_status === 'enriched' ? <ContactBlock p={p} /> : (
-                  <div className="col">
-                    <Availability p={p} />
-                    <div className="row">
-                      <button className="btn btn-primary" disabled={busy.has(p.apollo_id)} onClick={() => enrich([p])}>
-                        {busy.has(p.apollo_id) ? <Loader2 size={15} className="spin" /> : <Zap size={15} />} Получить контакты
-                      </button>
-                      <span className="small faint">до {COST_PER_PERSON} кредитов</span>
-                    </div>
-                  </div>
-                )}
+                {p.enrich_status === 'enriched' ? <ContactBlock p={p} /> : <Availability p={p} />}
+                <EnrichButtons p={p} busy={busy.has(p.apollo_id)} onEnrich={enrich} />
 
                 <div className="section-title">LinkedIn и соцсети</div>
                 <SocialLinks p={p} full onRecheck={async () => {

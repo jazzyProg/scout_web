@@ -124,4 +124,5 @@ export const plural = (n, one, few, many) => {
   return many
 }
 
-export const COST_PER_PERSON = 9
+export const COST_PER_PERSON = 9 // contacts with a phone: 1 + 8 for a mobile
+export const COST_BASE = 1 // LinkedIn + emails only

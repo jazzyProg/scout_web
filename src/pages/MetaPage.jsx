@@ -85,7 +85,7 @@ export default function MetaPage() {
             <div key={o.key} className="card card-pad meta-fam">
               <div className="row"><MetaBadge rel="family" /><b>{o.name}</b><div className="grow" /><span className="small faint">{o.domain}</span></div>
               <div className="small muted" style={{ marginTop: 8 }}>
-                в США по Apollo: <b className="num">{(o.apollo_people ?? 0).toLocaleString('ru-RU')}</b> · у нас в базе: <b className="num">{o.in_base}</b>
+                в мире по Apollo: <b className="num">{(o.apollo_people ?? 0).toLocaleString('ru-RU')}</b> · у нас в базе: <b className="num">{o.in_base}</b>
               </div>
               <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => search(o)}><Sparkles size={13} /> Искать людей</button>
             </div>
@@ -142,7 +142,7 @@ function OrgTable({ rows, onStatus, onSearch }) {
             <tr>
               <th>Компания</th>
               <th>Доказательства</th>
-              <th className="num">В США</th>
+              <th className="num">Всего в Apollo</th>
               <th className="num">У нас</th>
               <th />
             </tr>

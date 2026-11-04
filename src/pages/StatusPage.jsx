@@ -52,7 +52,17 @@ export default function StatusPage({ theme, setTheme, onLogout }) {
                   <dt>Запросов</dt>
                   <dd className="num">за час {s.linkedin.usage.hour} из {s.linkedin.usage.per_hour} · за сутки {s.linkedin.usage.day} из {s.linkedin.usage.per_day}</dd>
                   {s.linkedin.usage.paused_until && (
-                    <><dt>Пауза</dt><dd style={{ color: 'var(--amber)' }}>до {new Date(s.linkedin.usage.paused_until * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} — {s.linkedin.usage.pause_reason}</dd></>
+                    <>
+                      <dt>Пауза</dt>
+                      <dd style={{ color: 'var(--amber)' }}>
+                        {s.linkedin.usage.checkpoint ? 'до повторного входа' : `до ${new Date(s.linkedin.usage.paused_until * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`} — {s.linkedin.usage.pause_reason}
+                        <div style={{ marginTop: 6 }}>
+                          <button className="btn btn-sm" onClick={async () => { await api.post('/api/linkedin/resume'); load() }}>
+                            Я вошёл заново — возобновить
+                          </button>
+                        </div>
+                      </dd>
+                    </>
                   )}
                 </>
               )}
@@ -148,7 +158,7 @@ function AgentSettings() {
           <input className="input num" style={{ width: 70 }} type="number" min={0} max={100} value={form.per_company}
             onChange={(e) => setForm({ ...form, per_company: Number(e.target.value) || 0 })} />
         </label>
-        <label className="row small muted" style={{ gap: 8 }} title="Сколько страниц LinkedIn аккаунт открывает в час и в сутки. Больше — быстрее находятся профили, но выше риск ограничений аккаунта.">
+        <label className="row small muted" style={{ gap: 8 }} title="Сколько страниц LinkedIn аккаунт открывает в час и в сутки. При ~200 в сутки LinkedIn уже показал проверку безопасности — не поднимайте выше 15/100.">
           LinkedIn: запросов в час
           <input className="input num" style={{ width: 70 }} type="number" min={0} max={120} value={form.li_per_hour}
             onChange={(e) => setForm({ ...form, li_per_hour: Math.min(120, Number(e.target.value) || 0) })} />

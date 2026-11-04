@@ -4,8 +4,9 @@ import {
 } from 'lucide-react'
 import { api, download, fmtDate, fmtPhone, personName } from '../api'
 import { useApp } from '../App'
-import { LEAD_STATUS, LeadBadge, MetaBadge, mergeInto, PersonDrawer, useEnrich, useLivePeople } from '../people'
+import { LEAD_STATUS, LeadBadge, MetaBadge, mergeInto, needsEnrich, PersonDrawer, useEnrich, useLivePeople } from '../people'
 import { Avatar, CopyButton, ScoreBadge } from '../ui'
+import { regionLabel } from '../regions'
 
 const VIEWS = [
   ['contacts', 'С контактами', 'enriched'],
@@ -31,6 +32,9 @@ export default function ContactsPage() {
   const [sort, setSort] = useState('enriched')
   const [status, setStatus] = useState('')
   const [metaRel, setMetaRel] = useState('')
+  const [loc, setLoc] = useState('')
+  const [regions, setRegions] = useState([])
+  useEffect(() => { api.get('/api/regions').then((r) => setRegions(r.items)).catch(() => {}) }, [])
   const [orgs, setOrgs] = useState([]) // company filter: names exactly as in the list
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
@@ -41,7 +45,7 @@ export default function ContactsPage() {
   const { enrich, busy } = useEnrich(merge)
   useLivePeople(items, merge)
 
-  const params = `view=${view}&q=${encodeURIComponent(q)}&status=${status}&meta_rel=${metaRel}&org=${encodeURIComponent(orgs.join('|'))}`
+  const params = `view=${view}&q=${encodeURIComponent(q)}&status=${status}&meta_rel=${metaRel}&org=${encodeURIComponent(orgs.join('|'))}&loc=${encodeURIComponent(loc)}`
   const load = useCallback(async (offset = 0) => {
     setLoading(true)
     try {
@@ -123,6 +127,13 @@ export default function ContactsPage() {
             <select className="input" style={{ width: 'auto' }} value={metaRel} onChange={(e) => setMetaRel(e.target.value)}>
               {META_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+            <select className="input" style={{ width: 'auto', maxWidth: 230 }} value={loc} onChange={(e) => setLoc(e.target.value)}
+              title="Страна (после получения контактов) или регион, в котором человек найден">
+              <option value="">Все регионы</option>
+              {regions.map((r) => (
+                <option key={r.value} value={r.value}>{r.value === '__none' ? 'Регион неизвестен' : regionLabel(r.value)} · {r.n}</option>
+              ))}
+            </select>
             <select className="input" style={{ width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Любой статус</option>
               {Object.entries(LEAD_STATUS).map(([k, [label]]) => <option key={k} value={k}>{label}</option>)}
@@ -151,9 +162,14 @@ export default function ContactsPage() {
             <input type="checkbox" className="checkbox" checked={allSel} onChange={() => setSelected(allSel ? new Set() : new Set(items.map((p) => p.apollo_id)))} />
             <span className="small muted">{selected.size ? `Выбрано ${selected.size}` : `${total} в списке`}</span>
             <div className="grow" />
-            {selPeople.some((p) => p.enrich_status !== 'enriched') && (
-              <button className="btn btn-primary btn-sm" onClick={() => enrich(selPeople)}>
-                <Zap size={14} /> Получить контакты ({selPeople.filter((p) => p.enrich_status !== 'enriched').length})
+            {needsEnrich(selPeople, true).length > 0 && (
+              <button className="btn btn-sm" onClick={() => enrich(selPeople, true)} title="LinkedIn, email и мобильный: до 9 кредитов">
+                С телефонами ({needsEnrich(selPeople, true).length})
+              </button>
+            )}
+            {needsEnrich(selPeople).length > 0 && (
+              <button className="btn btn-primary btn-sm" onClick={() => enrich(selPeople)} title="Ссылка на LinkedIn, имя и email: 1 кредит">
+                <Zap size={14} /> LinkedIn и email ({needsEnrich(selPeople).length}) · {needsEnrich(selPeople).length} кр.
               </button>
             )}
             <button className="btn btn-sm" onClick={() => download(exportUrl('xlsx')).catch((e) => toast(e.message, 'error'))}><Download size={14} /> Excel</button>
@@ -164,7 +180,7 @@ export default function ContactsPage() {
             {items.length === 0 && !loading ? (
               <div className="empty">
                 <Contact size={36} />
-                <h3>{q || orgs.length || metaRel ? 'Ничего не найдено' : 'Пока пусто'}</h3>
+                <h3>{q || orgs.length || metaRel || loc ? 'Ничего не найдено' : 'Пока пусто'}</h3>
                 <div>{view === 'contacts' ? 'Найдите людей во вкладке «Поиск» и нажмите «Получить контакты».' : 'Здесь появятся люди из поисков.'}</div>
               </div>
             ) : (
@@ -219,6 +235,7 @@ export default function ContactsPage() {
                         </td>
                         <td>
                           {p.phone_status === 'pending' ? <span className="small muted pending">ищем…</span>
+                            : p.phone_status === 'skipped' && !p.phones?.length ? <span className="small faint">не запрашивали</span>
                             : p.phones?.length ? (
                               <div className="contact-line"><span className="num nowrap">{fmtPhone(p.phones[0].number)}</span><CopyButton text={p.phones[0].number} /></div>
                             ) : <span className="faint">—</span>}
@@ -227,8 +244,13 @@ export default function ContactsPage() {
                         <td className="small muted nowrap">{fmtDate(p.found_at)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                           {p.enrich_status !== 'enriched' && (
-                            <button className="btn btn-sm" disabled={busy.has(p.apollo_id)} onClick={() => enrich([p])} title="Получить контакты">
-                              {busy.has(p.apollo_id) ? <Loader2 size={14} className="spin" /> : <Zap size={14} />}
+                            <button className="btn btn-sm" disabled={busy.has(p.apollo_id)} onClick={() => enrich([p])} title="LinkedIn и email — 1 кредит">
+                              {busy.has(p.apollo_id) ? <Loader2 size={14} className="spin" /> : <Zap size={14} />} 1 кр.
+                            </button>
+                          )}
+                          {p.enrich_status === 'enriched' && p.phone_status === 'skipped' && (
+                            <button className="btn btn-sm" disabled={busy.has(p.apollo_id)} onClick={() => enrich([p], true)} title="Запросить телефон — до 9 кредитов">
+                              {busy.has(p.apollo_id) ? <Loader2 size={14} className="spin" /> : <Phone size={14} />}
                             </button>
                           )}
                         </td>
