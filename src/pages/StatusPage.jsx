@@ -42,12 +42,22 @@ export default function StatusPage({ theme, setTheme, onLogout }) {
             </dl>
           ) : <Err s={s?.proxy} />}
         </Card>
-        <Card icon={Linkedin} title="LinkedIn (запасной поиск)" ok={s?.linkedin?.ok && s?.linkedin?.logged_in} warn={s?.linkedin?.restricted}>
+        <Card icon={Linkedin} title="LinkedIn" ok={s?.linkedin?.ok && s?.linkedin?.logged_in} warn={s?.linkedin?.restricted || s?.linkedin?.usage?.paused_until}>
           {s?.linkedin?.ok ? (
             <dl className="kv">
               <dt>Сессия</dt><dd>{s.linkedin.logged_in ? 'вход выполнен' : 'нужен вход'}</dd>
               {s.linkedin.restricted && <><dt>Аккаунт</dt><dd style={{ color: 'var(--amber)' }}>LinkedIn ограничил аккаунт</dd></>}
-              <dt>Когда используется</dt><dd>только если Apollo нашёл меньше нужного</dd>
+              {s.linkedin.usage && (
+                <>
+                  <dt>Запросов</dt>
+                  <dd className="num">за час {s.linkedin.usage.hour} из {s.linkedin.usage.per_hour} · за сутки {s.linkedin.usage.day} из {s.linkedin.usage.per_day}</dd>
+                  {s.linkedin.usage.paused_until && (
+                    <><dt>Пауза</dt><dd style={{ color: 'var(--amber)' }}>до {new Date(s.linkedin.usage.paused_until * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} — {s.linkedin.usage.pause_reason}</dd></>
+                  )}
+                </>
+              )}
+              <dt>Ждут поиска профиля</dt><dd className="num">{s.linkedin.waiting ?? 0} чел.</dd>
+              <dt>Для чего</dt><dd>бесплатно находит профиль каждого найденного человека; запасной поиск, если Apollo нашёл мало</dd>
               {!s.linkedin.logged_in && <><dt>Как войти</dt><dd>на сервере: <code>~/research_agent_people/linkedin-login.sh</code></dd></>}
             </dl>
           ) : <Err s={s?.linkedin} />}
@@ -132,6 +142,14 @@ function AgentSettings() {
           Максимум людей из одной компании (0 — без лимита)
           <input className="input num" style={{ width: 70 }} type="number" min={0} max={50} value={form.per_company}
             onChange={(e) => setForm({ ...form, per_company: Number(e.target.value) || 0 })} />
+        </label>
+        <label className="row small muted" style={{ gap: 8 }} title="Сколько страниц LinkedIn аккаунт открывает в час и в сутки. Больше — быстрее находятся профили, но выше риск ограничений аккаунта.">
+          LinkedIn: запросов в час
+          <input className="input num" style={{ width: 70 }} type="number" min={0} max={120} value={form.li_per_hour}
+            onChange={(e) => setForm({ ...form, li_per_hour: Math.min(120, Number(e.target.value) || 0) })} />
+          в сутки
+          <input className="input num" style={{ width: 80 }} type="number" min={0} max={1000} value={form.li_per_day}
+            onChange={(e) => setForm({ ...form, li_per_day: Math.min(1000, Number(e.target.value) || 0) })} />
         </label>
         <div className="grow" />
         <button className="btn btn-primary btn-sm" disabled={!dirty || saving} onClick={save}><Save size={14} /> Сохранить</button>

@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { Contact, Link2, Loader2, LogOut, MessageSquare, Moon, Plus, Search, Settings, Sparkles, Sun, Trash2 } from 'lucide-react'
+import { Contact, Infinity as InfinityIcon, Link2, Loader2, LogOut, MessageSquare, Moon, Plus, Search, Settings, Sparkles, Sun, Trash2 } from 'lucide-react'
 import { api, login, logout, setUnauthorizedHandler } from './api'
 import { Confirm, ToastProvider, useToast } from './ui'
 import SearchPage from './pages/SearchPage'
 import LookupPage from './pages/LookupPage'
 import ContactsPage from './pages/ContactsPage'
+import MetaPage from './pages/MetaPage'
 import StatusPage from './pages/StatusPage'
 
 const AppCtx = createContext(null)
@@ -14,6 +15,7 @@ const PAGES = [
   { id: 'search', label: 'Поиск', icon: Sparkles },
   { id: 'lookup', label: 'По ссылке', icon: Link2 },
   { id: 'contacts', label: 'Контакты', icon: Contact },
+  { id: 'meta', label: 'Экосистема Meta', short: 'Meta', icon: InfinityIcon },
   { id: 'settings', label: 'Настройки', icon: Settings },
 ]
 
@@ -112,6 +114,9 @@ function Shell({ onLogout }) {
 
   const go = (page, arg) => { window.location.hash = arg ? `${page}/${arg}` : page }
   const newChat = () => { setChatNonce((n) => n + 1); go('search') }
+  // "search in these companies" from other pages: a new chat with the composer filled in
+  const [prefill, setPrefill] = useState(null)
+  const searchIn = useCallback((p) => { setPrefill({ ...p, at: Date.now() }); setChatNonce((n) => n + 1); window.location.hash = 'search' }, [])
   const deleteChat = (c) => setConfirm({
     title: 'Удалить чат?',
     body: `«${c.title}». Найденные в нём люди останутся во вкладке «Контакты» и повторно в поиск не попадут.`,
@@ -122,7 +127,10 @@ function Shell({ onLogout }) {
       if (route.page === 'search' && String(route.arg) === String(c.id)) newChat()
     },
   })
-  const ctx = { toast, confirm: setConfirm, credits, stats, refreshCredits, go, chats, refreshChats, settings, setSettings }
+  const ctx = {
+    toast, confirm: setConfirm, credits, stats, refreshCredits, go, chats, refreshChats, settings, setSettings,
+    searchIn, prefill, clearPrefill: () => setPrefill(null),
+  }
   const pct = credits?.limit ? Math.max(0, Math.min(100, (credits.left / credits.limit) * 100)) : 0
 
   return (
@@ -182,12 +190,13 @@ function Shell({ onLogout }) {
           </div>
           {route.page === 'lookup' && <LookupPage />}
           {route.page === 'contacts' && <ContactsPage />}
+          {route.page === 'meta' && <MetaPage />}
           {route.page === 'settings' && <StatusPage theme={theme} setTheme={setTheme} onLogout={onLogout} />}
         </main>
         <nav className="mobile-nav">
           {PAGES.map((p) => (
             <button key={p.id} className={route.page === p.id ? 'active' : ''} onClick={() => go(p.id)}>
-              <p.icon size={20} /> {p.label}
+              <p.icon size={20} /> {p.short || p.label}
             </button>
           ))}
         </nav>

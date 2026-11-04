@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  AtSign, Briefcase, Building2, ExternalLink, EyeOff, Facebook, Github, Globe, Instagram, Linkedin, Loader2, Mail, MapPin,
-  Pencil, Phone, RefreshCw, Sparkles, Twitch, Twitter, X, Youtube, Zap,
+  AtSign, Briefcase, Building2, ExternalLink, EyeOff, Facebook, Github, Globe, Infinity as InfinityIcon, Instagram, Linkedin,
+  Loader2, Mail, MapPin, Pencil, Phone, RefreshCw, Sparkles, Twitch, Twitter, X, Youtube, Zap,
 } from 'lucide-react'
 import { api, COST_PER_PERSON, fmtDate, fmtPhone, personName, plural } from './api'
 import { useApp } from './App'
@@ -167,6 +167,21 @@ function Availability({ p }) {
   )
 }
 
+/* ---------------------------------------------------------------- Meta's ecosystem */
+export const META_REL = {
+  meta: ['Meta', 'badge-meta', 'Сотрудник Meta'],
+  family: ['Meta', 'badge-meta', 'Компания группы Meta'],
+  contractor: ['Подрядчик Meta', 'badge-meta-c', 'Подрядчик Meta'],
+  partner: ['Партнёр Meta', 'badge-meta-p', 'Партнёр Meta'],
+}
+export const META_WEIGHT = { family: 4, meta: 3, contractor: 2, partner: 1 }
+
+export function MetaBadge({ rel, note }) {
+  const m = META_REL[rel]
+  if (!m) return null
+  return <span className={`badge ${m[1]}`} title={note || m[2]}><InfinityIcon size={12} /> {m[0]}</span>
+}
+
 export function SourceBadge({ p }) {
   if (p.source === 'link') return <span className="badge badge-gray">по ссылке</span>
   if (p.source === 'linkedin') return <span className="badge badge-blue"><Linkedin size={11} /> LinkedIn</span>
@@ -179,15 +194,26 @@ const SOCIAL_STATUS = { confirmed: ['подтверждён', 'badge-green'], li
 
 export function SocialLinks({ p, full = false, onRecheck }) {
   const st = p.socials_status
-  if (!st && !full) return null
+  const li = p.linkedin_url && p.enrich_status !== 'enriched'
+  const liChip = li && <a className="social li" href={p.linkedin_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><Linkedin size={13} /> LinkedIn</a>
+  if (!st && !full && !li) return null
   if (st === 'queued' || st === 'pending') {
-    return <div className="small muted row pending" style={{ gap: 6 }}><AtSign size={13} /> Ищем соцсети{st === 'queued' ? ' (в очереди)' : '…'}</div>
+    return (
+      <div className="socials">
+        {liChip}
+        <span className="small muted row pending" style={{ gap: 6 }}>
+          <AtSign size={13} /> {p.linkedin_url ? 'Ищем соцсети' : 'Ищем профиль LinkedIn и соцсети'}{st === 'queued' ? ' (в очереди)' : '…'}
+        </span>
+      </div>
+    )
   }
   const all = p.socials || []
   const sure = all.filter((a) => a.status !== 'possible')
   const shown = full ? all : sure
+  if (!shown.length && !li && !full && st !== 'none') return null
   return (
     <div className="socials">
+      {liChip}
       {shown.map((a) => {
         const I = SOCIAL_ICON[a.site.toLowerCase()] || Globe
         const [label, cls] = SOCIAL_STATUS[a.status] || SOCIAL_STATUS.possible
@@ -201,8 +227,13 @@ export function SocialLinks({ p, full = false, onRecheck }) {
       })}
       {!full && all.length > sure.length && <span className="small faint">+{all.length - sure.length} возможных</span>}
       {full && st === 'done' && !all.length && <span className="small faint">Не найдено</span>}
+      {st === 'none' && (
+        <span className="small faint">
+          {p.linkedin_url ? 'Соцсети не найдены' : 'Профиль LinkedIn не найден автоматически — точную ссылку даст «Получить контакты»'}
+        </span>
+      )}
       {full && st === 'error' && <span className="small" style={{ color: 'var(--red)' }}>Ошибка поиска</span>}
-      {full && !st && <span className="small faint">Ещё не искали (нужна ссылка на LinkedIn)</span>}
+      {full && !st && <span className="small faint">Ещё не искали</span>}
       {full && onRecheck && st !== 'queued' && st !== 'pending' && (
         <button className="btn btn-ghost btn-sm" onClick={onRecheck}><RefreshCw size={13} /> Искать заново</button>
       )}
@@ -214,7 +245,7 @@ export function SocialLinks({ p, full = false, onRecheck }) {
 export function PersonCard({ p, selected, onSelect, onOpen, onEnrich, busy, index = 0 }) {
   const loc = [p.city, p.state, p.country === 'United States' ? 'USA' : p.country].filter(Boolean).join(', ')
   return (
-    <div className={`card pcard ${selected ? 'selected' : ''}`} style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
+    <div className={`card pcard ${selected ? 'selected' : ''} ${p.meta_rel ? 'meta' : ''}`} style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
       <div className="pcard-head">
         {onSelect && <input type="checkbox" className="checkbox" checked={selected} onChange={() => onSelect(p.apollo_id)} style={{ marginTop: 13 }} />}
         <Avatar person={p} />
@@ -227,10 +258,11 @@ export function PersonCard({ p, selected, onSelect, onOpen, onEnrich, busy, inde
           </div>
         </div>
         <div className="score col" style={{ gap: 4, alignItems: 'flex-end' }}>
-          <ScoreBadge score={p.score} /><SourceBadge p={p} />
+          <ScoreBadge score={p.score} /><MetaBadge rel={p.meta_rel} note={p.meta_note} /><SourceBadge p={p} />
           {p.lead_status && p.lead_status !== 'new' && <LeadBadge status={p.lead_status} />}
         </div>
       </div>
+      {p.meta_rel && p.meta_rel !== 'meta' && p.meta_note && <div className="meta-note">{p.meta_note}</div>}
       {p.match_note && p.source !== 'linkedin' && p.enrich_status !== 'enriched' && (
         <div className="small faint">найден {p.match_note}</div>
       )}
@@ -307,6 +339,9 @@ function EditField({ label, value, onSave, multiline, placeholder }) {
 
 function eventText(e) {
   if (e.kind === 'found') return ['Найден в поиске', e.detail]
+  if (e.kind === 'found_again') return ['Снова найден в поиске', e.detail]
+  if (e.kind === 'linkedin') return ['Найден профиль LinkedIn (бесплатно)', e.detail]
+  if (e.kind === 'socials') return ['Соцсети (Maigret)', e.detail]
   if (e.kind === 'enriched') return ['Получены контакты', e.detail]
   if (e.kind === 'phones') return ['Телефоны', e.detail]
   if (e.kind === 'hidden') return ['Скрыт', null]
@@ -399,8 +434,10 @@ export function PersonDrawer({ id, onClose, onChanged, onHidden }) {
               </select>
               <button className="btn btn-ghost icon-btn" onClick={onClose} aria-label="Закрыть"><X size={18} /></button>
             </div>
+            {p.meta_note && <div className={p.meta_rel ? 'meta-note' : 'small faint'} style={{ marginTop: 12 }}>{p.meta_note}</div>}
             <div className="row wrap" style={{ marginTop: 14, gap: 6 }}>
               <ScoreBadge score={p.score} />
+              <MetaBadge rel={p.meta_rel} note={p.meta_note} />
               {p.seniority && <span className="badge badge-accent">{p.seniority}</span>}
               <SourceBadge p={p} />
               {(p.city || p.state || p.country) && <span className="badge badge-gray"><MapPin size={11} /> {[p.city, p.state, p.country].filter(Boolean).join(', ')}</span>}
@@ -425,7 +462,7 @@ export function PersonDrawer({ id, onClose, onChanged, onHidden }) {
                   </div>
                 )}
 
-                <div className="section-title">Соцсети (Maigret)</div>
+                <div className="section-title">LinkedIn и соцсети</div>
                 <SocialLinks p={p} full onRecheck={async () => {
                   try { merge([await api.post(`/api/people/${encodeURIComponent(p.apollo_id)}/socials`)]) } catch (e) { toast(e.message, 'error') }
                 }} />

@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUp, Bot, Building2, Check, CheckSquare, ChevronDown, Download, Loader2, RefreshCw, SlidersHorizontal,
-  Sparkles, Square, Users, X, Zap,
+  ArrowUp, Bot, Building2, Check, CheckSquare, ChevronDown, Download, Infinity as InfinityIcon, Loader2, RefreshCw,
+  SlidersHorizontal, Sparkles, Square, Users, X, Zap,
 } from 'lucide-react'
 import { api, COST_PER_PERSON, download, plural, streamSearch } from '../api'
 import { useApp } from '../App'
-import { mergeList, PersonCard, PersonDrawer, useEnrich, useLivePeople } from '../people'
+import { META_WEIGHT, mergeList, PersonCard, PersonDrawer, useEnrich, useLivePeople } from '../people'
 import { Stepper, Switch, TagInput } from '../ui'
 
 const EXAMPLES = [
-  ['CTO финтех-компаний в Нью-Йорке', 'Открытый поиск по отрасли и региону'],
+  ['Маркетинг и партнёрства в Meta, Instagram и у подрядчиков Meta', 'Экосистема Meta: группа + подрядчики + партнёры'],
   ['Head of Marketing в Notion и Figma', 'Конкретные компании'],
   ['Компании по типу Stake и Gamdom: кто ведёт соцсети и рекламу', 'Похожие компании + роли'],
   ['VP Sales в SaaS на 51–200 сотрудников, Калифорния', 'Фильтр по размеру компании'],
@@ -49,12 +49,12 @@ const turnFromSearch = ({ search: s, people }) => ({
 })
 
 export default function SearchPage({ chatId, nonce }) {
-  const { toast, refreshCredits, refreshChats, settings } = useApp()
+  const { toast, refreshCredits, refreshChats, settings, prefill, clearPrefill } = useApp()
   const [form, setForm] = useState(emptyForm)
   const [locTouched, setLocTouched] = useState(false)
   const [count, setCount] = useState(25)
   const [countSet, setCountSet] = useState(false)
-  const [opts, setOpts] = useState({ expand: true, rank: true, linkedin: true, similar: false })
+  const [opts, setOpts] = useState({ expand: true, rank: true, linkedin: true, similar: false, meta: false })
   const [loadingChat, setLoadingChat] = useState(false)
   const chatRef = useRef(null) // the chat these turns belong to (null = a new chat not saved yet)
   const [showFilters, setShowFilters] = useState(false)
@@ -90,9 +90,20 @@ export default function SearchPage({ chatId, nonce }) {
       .finally(() => setLoadingChat(false))
   }, [chatId, nonce, toast])
 
+  // "search in these companies" from the contacts or the Meta page: the composer is filled, the roles are up to the user
+  useEffect(() => {
+    if (!prefill) return
+    setForm({ ...emptyForm(), companies: prefill.companies || [], query: prefill.query || '' })
+    setOpts((o) => ({ ...o, meta: !!prefill.meta, similar: false }))
+    setShowFilters(!!prefill.companies?.length)
+    clearPrefill()
+    setTimeout(() => taRef.current?.focus(), 50)
+  }, [prefill, clearPrefill])
+
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
   const toggleIn = (k, v) => setForm((f) => ({ ...f, [k]: f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v] }))
-  const hasInput = form.query.trim() || form.companies.length || form.titles.length || form.industries.length || form.seniorities.length
+  const hasInput = form.query.trim() || form.companies.length || form.titles.length || form.industries.length
+    || form.seniorities.length || opts.meta
 
   // keep the newest message in view while the agent streams, unless the user scrolled up to read
   const stick = useRef(true)
@@ -234,8 +245,9 @@ export default function SearchPage({ chatId, nonce }) {
                 <Switch checked={opts.rank} onChange={(v) => setOpts((o) => ({ ...o, rank: v }))}>ИИ отсеивает нерелевантных</Switch>
                 <Switch checked={opts.linkedin} onChange={(v) => setOpts((o) => ({ ...o, linkedin: v }))}>Если мало — искать в LinkedIn</Switch>
                 <Switch checked={opts.similar} onChange={(v) => setOpts((o) => ({ ...o, similar: v }))}>Искать похожие компании</Switch>
+                <Switch checked={opts.meta} onChange={(v) => setOpts((o) => ({ ...o, meta: v }))}>Вся экосистема Meta (группа, подрядчики, партнёры)</Switch>
                 <div className="grow" />
-                <button className="btn btn-ghost btn-sm" onClick={() => { setForm(emptyForm()); setLocTouched(false); setCountSet(false) }}><X size={14} /> Сбросить</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setForm(emptyForm()); setLocTouched(false); setCountSet(false); setOpts((o) => ({ ...o, meta: false, similar: false })) }}><X size={14} /> Сбросить</button>
               </div>
             </div>
           </div>
@@ -257,6 +269,10 @@ export default function SearchPage({ chatId, nonce }) {
             </button>
             <button className="chip" onClick={() => setShowFilters(true)} title="Регион">
               📍 {form.locations.length ? form.locations.join(', ') : 'United States'}
+            </button>
+            <button className={`chip ${opts.meta ? 'on meta-chip' : ''}`} onClick={() => setOpts((o) => ({ ...o, meta: !o.meta }))}
+              title="Искать в Meta, Facebook, Instagram, WhatsApp и у подрядчиков/партнёров Meta">
+              <InfinityIcon size={14} /> Meta
             </button>
             <div className="grow" />
             <span className="small muted hide-sm">Сколько</span>
@@ -300,14 +316,34 @@ function requestChips(r) {
     ...(r.industries || []).map((x) => `🏷 ${x}`),
     ...(r.locations || []).map((x) => `📍 ${x}`),
     ...(r.similar ? ['+ похожие компании'] : []),
+    ...(r.meta ? ['∞ экосистема Meta'] : []),
     `${r.count} чел.`,
   ]
 }
 
 function Turn({ t, setTurn, enrich, busy, onOpen, onMore, onPickCompany, onStop, disabled }) {
   const { toast } = useApp()
-  const { run, people } = t
+  const { run, people: all } = t
   const sel = t.selected
+  // filter by the companies found: one, several, or Meta's whole ecosystem
+  const [orgSel, setOrgSel] = useState(() => new Set())
+  const [metaOnly, setMetaOnly] = useState(false)
+  const orgs = useMemo(() => {
+    const m = new Map()
+    for (const p of all) {
+      const name = p.org_name || '—'
+      const o = m.get(name) || { name, n: 0, w: 0 }
+      o.n += 1
+      o.w = Math.max(o.w, META_WEIGHT[p.meta_rel] || 0)
+      m.set(name, o)
+    }
+    return [...m.values()].sort((a, b) => b.w - a.w || b.n - a.n || a.name.localeCompare(b.name))
+  }, [all])
+  const metaCount = all.filter((p) => p.meta_rel).length
+  const people = all.filter((p) => (!orgSel.size || orgSel.has(p.org_name || '—')) && (!metaOnly || p.meta_rel))
+  const filtered = people.length !== all.length
+  const pickOrg = (name) => setOrgSel((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n })
+
   const toggle = (id) => setTurn(t.id, (x) => {
     const n = new Set(x.selected); n.has(id) ? n.delete(id) : n.add(id); return { ...x, selected: n }
   })
@@ -315,6 +351,8 @@ function Turn({ t, setTurn, enrich, busy, onOpen, onMore, onPickCompany, onStop,
   const selPeople = people.filter((p) => sel.has(p.apollo_id))
   const target = selPeople.length ? selPeople : people
   const toEnrich = target.filter((p) => p.enrich_status !== 'enriched')
+  const fresh = people.filter((p) => !p.seen_before)
+  const earlier = people.filter((p) => p.seen_before)
 
   return (
     <div className="turn">
@@ -332,11 +370,31 @@ function Turn({ t, setTurn, enrich, busy, onOpen, onMore, onPickCompany, onStop,
         <div className="bot-body">
           <RunPanel run={run} running={t.running} onPickCompany={onPickCompany} onStop={onStop} />
 
+          {all.length > 0 && orgs.length > 1 && (
+            <div className="org-filter">
+              <span className="small muted"><Building2 size={13} style={{ verticalAlign: -2 }} /> Компании:</span>
+              <button className={`chip ${!orgSel.size && !metaOnly ? 'on' : ''}`} onClick={() => { setOrgSel(new Set()); setMetaOnly(false) }}>
+                Все <span className="n num">{all.length}</span>
+              </button>
+              {metaCount > 0 && (
+                <button className={`chip ${metaOnly ? 'on meta-chip' : ''}`} onClick={() => setMetaOnly((x) => !x)} title="Сотрудники Meta, подрядчики и партнёры">
+                  <InfinityIcon size={13} /> Экосистема Meta <span className="n num">{metaCount}</span>
+                </button>
+              )}
+              {orgs.map((o) => (
+                <button key={o.name} className={`chip ${orgSel.has(o.name) ? 'on' : ''} ${o.w ? 'meta-org' : ''}`} onClick={() => pickOrg(o.name)}
+                  title={orgSel.has(o.name) ? 'Убрать из фильтра' : 'Показать только эту компанию (можно выбрать несколько)'}>
+                  {o.name} <span className="n num">{o.n}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {all.length > 0 && people.length === 0 && <div className="small muted">По выбранным компаниям никого нет — снимите фильтр.</div>}
           {people.length > 0 && (
             <>
               <div className="turn-toolbar">
                 <button className="btn btn-ghost btn-sm" onClick={() => setTurn(t.id, (x) => ({ ...x, selected: allSel ? new Set() : new Set(people.map((p) => p.apollo_id)) }))}>
-                  {allSel ? <CheckSquare size={15} /> : <Square size={15} />} {sel.size ? `Выбрано ${sel.size}` : 'Выбрать все'}
+                  {allSel ? <CheckSquare size={15} /> : <Square size={15} />} {sel.size ? `Выбрано ${sel.size}` : filtered ? `Выбрать показанных (${people.length})` : 'Выбрать все'}
                 </button>
                 <div className="grow" />
                 <button className="btn btn-sm" disabled={disabled} onClick={onMore} title="Ещё столько же новых людей по этому запросу">
@@ -351,11 +409,23 @@ function Turn({ t, setTurn, enrich, busy, onOpen, onMore, onPickCompany, onStop,
                 </button>
               </div>
               <div className="cards">
-                {people.map((p, i) => (
+                {fresh.map((p, i) => (
                   <PersonCard key={p.apollo_id} p={p} index={i} selected={sel.has(p.apollo_id)} onSelect={toggle}
                     onOpen={(x) => onOpen(x.apollo_id)} onEnrich={enrich} busy={busy.has(p.apollo_id)} />
                 ))}
               </div>
+              {fresh.length === 0 && earlier.length > 0 && <div className="small muted">Новых людей в выбранных компаниях нет.</div>}
+              {earlier.length > 0 && (
+                <>
+                  <div className="earlier-head">Найдены ранее · {earlier.length} — уже есть в базе, показаны для полноты</div>
+                  <div className="cards earlier">
+                    {earlier.map((p, i) => (
+                      <PersonCard key={p.apollo_id} p={p} index={i} selected={sel.has(p.apollo_id)} onSelect={toggle}
+                        onOpen={(x) => onOpen(x.apollo_id)} onEnrich={enrich} busy={busy.has(p.apollo_id)} />
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -381,7 +451,8 @@ function RunPanel({ run, running, onPickCompany, onStop }) {
         {running ? <Loader2 size={16} className="spin" color="var(--accent)" />
           : run.error ? <X size={16} color="var(--red)" /> : <Check size={16} color="var(--green)" />}
         <span className="title">
-          {running ? (run.steps.at(-1)?.title || 'Думаю…') : run.error ? 'Ошибка' : n ? `Нашёл ${n} ${plural(n, 'человека', 'человек', 'человек')}` : 'Никого нового не нашёл'}
+          {running ? (run.steps.at(-1)?.title || 'Думаю…') : run.error ? 'Ошибка' : n ? `Нашёл ${n} ${plural(n, 'нового человека', 'новых человек', 'новых человек')}` : 'Новых людей нет'}
+          {!running && run.done?.skipped > 0 && <span className="muted" style={{ fontWeight: 500 }}> · ранее найденных {run.done.skipped}</span>}
         </span>
         {run.done && <span className="small muted hide-sm">{fmtTook(run.done.took)} · шагов {run.steps.length}</span>}
         <div className="grow" />
