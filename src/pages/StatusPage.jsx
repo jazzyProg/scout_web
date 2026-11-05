@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Bot, Coins, Globe, Linkedin, LogOut, Moon, RefreshCw, Save, Sun, Target } from 'lucide-react'
+import { Bot, Coins, Globe, Linkedin, LogOut, Moon, RefreshCw, Save, Sun, Target, Twitter } from 'lucide-react'
 import { api, logout } from '../api'
 import { useApp } from '../App'
 
@@ -66,11 +66,24 @@ export default function StatusPage({ theme, setTheme, onLogout }) {
                   )}
                 </>
               )}
-              <dt>Ждут поиска профиля</dt><dd className="num">{s.linkedin.waiting ?? 0} чел.</dd>
-              <dt>Для чего</dt><dd>бесплатно находит профиль каждого найденного человека; запасной поиск, если Apollo нашёл мало</dd>
+              <dt>Ждут соцсети</dt><dd className="num">{s.linkedin.waiting ?? 0} чел.</dd>
+              <dt>Для чего</dt><dd>автоматически LinkedIn больше не запускается: соцсети ищутся в фоне без него, профиль LinkedIn — вручную из карточки (очередь) или за кредиты Apollo</dd>
               {!s.linkedin.logged_in && <><dt>Как войти</dt><dd>на сервере: <code>~/research_agent_people/linkedin-login.sh</code></dd></>}
             </dl>
           ) : <Err s={s?.linkedin} />}
+        </Card>
+        <Card icon={Twitter} title="X / Apify" ok={s?.apify ? s.apify.keys > 0 : undefined}
+          warn={s?.apify?.available_keys === 0 || s?.apify?.runs_today >= s?.apify?.max_runs}>
+          {s?.apify ? (
+            <dl className="kv">
+              <dt>Ключей</dt><dd className="num">{s.apify.keys} · доступно сейчас {s.apify.available_keys ?? '—'}{s.apify.bad_keys ? ` · невалидных ${s.apify.bad_keys}` : ''}{s.apify.month_limited ? ` · исчерпали месяц ${s.apify.month_limited}` : ''}</dd>
+              <dt>Запуски сегодня</dt><dd className="num">{s.apify.runs_today} из {s.apify.max_runs}</dd>
+              <dt>Запуски за месяц</dt><dd className="num">{s.apify.runs_month} из {s.apify.max_runs_month}</dd>
+              <dt>Постов сегодня</dt><dd className="num">{s.apify.items_today}</dd>
+              <dt>Лимиты</dt><dd>{s.apify.runs_per_key} запуск на ключ/день · {s.apify.runs_per_key_month} на ключ/месяц · до {s.apify.max_items} постов · кэш {s.apify.cache_hours} ч</dd>
+              <dt>Для чего</dt><dd>поиск английских постов X о разбане Instagram и работе в Meta/T&S; без ключей — бесплатный Bing</dd>
+            </dl>
+          ) : <div className="skeleton" style={{ height: 60, marginTop: 12 }} />}
         </Card>
         <Card icon={Bot} title="ИИ-модель" ok={s?.ollama?.ok} warn={s?.ollama?.ok && !s?.ollama?.loaded}>
           {s?.ollama?.ok ? (

@@ -19,6 +19,7 @@ export const mergeInto = (setPeople) => (rows) => setPeople((prev) => mergeList(
 export function useLivePeople(people, merge) {
   const ids = people
     .filter((p) => p.phone_status === 'pending' || p.socials_status === 'queued' || p.socials_status === 'pending'
+      || p.li_status === 'queued' || p.li_status === 'pending'
       || (p.enrich_status === 'enriched' && p.summary == null && Date.now() / 1000 - (p.enriched_at || 0) < 600))
     .map((p) => p.apollo_id)
   const key = ids.join(',')
@@ -99,8 +100,9 @@ export function useEnrich(merge) {
 
 /* Who a "get contacts" click would spend credits on. */
 export function needsEnrich(people, phones = false) {
-  return people.filter((p) => p.enrich_status !== 'enriched'
-    || (phones && p.phone_status === 'skipped' && !String(p.apollo_id).startsWith('li:')))
+  return people.filter((p) => p.source !== 'x'
+    && (p.enrich_status !== 'enriched'
+      || (phones && p.phone_status === 'skipped' && !String(p.apollo_id).startsWith('li:'))))
 }
 
 export async function hidePeople(ids, hidden = true) {
@@ -182,7 +184,7 @@ export function ContactBlock({ p }) {
 }
 
 function Availability({ p }) {
-  if (p.enrich_status === 'enriched') return null
+  if (p.enrich_status === 'enriched' || p.source === 'x') return null
   return (
     <div className="avail">
       {p.has_email ? <span className="badge badge-green"><Mail size={11} /> есть email</span> : <span className="badge badge-gray"><Mail size={11} /> email?</span>}
@@ -212,6 +214,7 @@ export function MetaBadge({ rel, note }) {
 export function SourceBadge({ p }) {
   if (p.source === 'link') return <span className="badge badge-gray">по ссылке</span>
   if (p.source === 'linkedin') return <span className="badge badge-blue"><Linkedin size={11} /> LinkedIn</span>
+  if (p.source === 'x') return <span className="badge badge-gray"><Twitter size={11} /> X</span>
   return null
 }
 
@@ -223,7 +226,7 @@ export function SocialLinks({ p, full = false, onRecheck }) {
   const st = p.socials_status
   const li = p.linkedin_url && p.enrich_status !== 'enriched'
   const liChip = li && <a className="social li" href={p.linkedin_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><Linkedin size={13} /> LinkedIn</a>
-  if (!st && !full && !li) return null
+  if (!st && !full && !li && !(p.socials || []).length) return null
   if (st === 'queued' || st === 'pending') {
     return (
       <div className="socials">
@@ -309,6 +312,7 @@ export function PersonCard({ p, selected, onSelect, onOpen, onEnrich, busy, inde
 /* "LinkedIn и email" for 1 credit, the phone separately (+8): the phone is what makes contacts expensive. */
 export function EnrichButtons({ p, busy, onEnrich, small = false }) {
   const cls = small ? 'btn-sm' : ''
+  if (p.source === 'x') return null // an X handle is the contact; Apollo has no person to enrich
   if (p.enrich_status !== 'enriched') {
     return (
       <div className="pcard-foot row wrap" style={{ gap: 6 }}>
@@ -461,6 +465,18 @@ export function PersonDrawer({ id, onClose, onChanged, onHidden }) {
     }
   }
 
+  const queueLinkedIn = async () => {
+    if (!p) return
+    try {
+      const row = await api.post(`/api/people/${encodeURIComponent(p.apollo_id)}/linkedin`)
+      merge([row])
+      onChanged?.([row])
+      toast('LinkedIn поставлен в очередь', 'success')
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+
   if (!id) return null
   return (
     <>
@@ -506,6 +522,18 @@ export function PersonDrawer({ id, onClose, onChanged, onHidden }) {
                 <SocialLinks p={p} full onRecheck={async () => {
                   try { merge([await api.post(`/api/people/${encodeURIComponent(p.apollo_id)}/socials`)]) } catch (e) { toast(e.message, 'error') }
                 }} />
+                {!p.linkedin_url && (
+                  <div className="row wrap" style={{ gap: 8, marginTop: 8 }}>
+                    <button className="btn btn-sm" onClick={queueLinkedIn}
+                      disabled={p.li_status === 'queued' || p.li_status === 'pending'}>
+                      <Linkedin size={14} />
+                      {p.li_status === 'queued' ? 'LinkedIn в очереди…'
+                        : p.li_status === 'pending' ? 'Ищу LinkedIn…' : 'Найти LinkedIn (в очередь)'}
+                    </button>
+                    {p.li_status === 'error' && <span className="small" style={{ color: 'var(--red)' }}>{p.li_error || 'не получилось, попробуйте позже'}</span>}
+                    {p.li_status === 'none' && <span className="small faint">профиль не найден</span>}
+                  </div>
+                )}
 
                 <div className="section-title">Данные (можно править)</div>
                 <div className="edit-grid">

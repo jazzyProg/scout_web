@@ -62,7 +62,7 @@ export default function SearchPage({ chatId, nonce }) {
   const [locTouched, setLocTouched] = useState(false)
   const [count, setCount] = useState(100)
   const [countSet, setCountSet] = useState(false)
-  const [opts, setOpts] = useState({ expand: true, rank: true, linkedin: true, similar: false, meta: false, mode: 'auto', region: 'auto' })
+  const [opts, setOpts] = useState({ expand: true, rank: true, linkedin: false, similar: false, meta: false, mode: 'auto', region: 'auto' })
   const [loadingChat, setLoadingChat] = useState(false)
   const chatRef = useRef(null) // the chat these turns belong to (null = a new chat not saved yet)
   const [showFilters, setShowFilters] = useState(false)
